@@ -1,0 +1,17 @@
+[tool.poetry]
+name = "docker-containers"
+version = "0.1.0"
+description = ""
+authors = ["Grzegorz Szpura <g.szpura@gmail.com>"]
+readme = "README.md"
+packages = [{include = "docker_containers"}]
+
+[tool.poetry.dependencies]
+python = "^3.11"
+asyncpg = "^0.27.0"
+pydantic = "^1.10.7"
+
+
+[build-system]
+requires = ["poetry-core"]
+build-backend = "poetry.core.masonry.api"

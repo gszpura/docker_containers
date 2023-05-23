@@ -1,0 +1,24 @@
+------------------------
+220MB of DB
+------------------------
+scaling factor: 10
+query mode: simple
+number of clients: 20
+number of threads: 10
+duration: 120 s
+number of transactions actually processed: 1155229
+latency average = 2.076 ms
+initial connection time = 75.076 ms
+tps = 9632.311418 (without initial connection time)
+------------------------
+15GB of DB
+------------------------
+scaling factor: 1000
+query mode: simple
+number of clients: 20
+number of threads: 10
+duration: 120 s
+number of transactions actually processed: 1434640
+latency average = 1.672 ms
+initial connection time = 79.710 ms
+tps = 11963.127411 (without initial connection time)

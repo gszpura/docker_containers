@@ -1,0 +1,37 @@
+version: "3.8"
+
+services:
+  db:
+    image: postgres:latest
+    environment:
+      - POSTGRES_USER=app_user
+      - POSTGRES_PASSWORD=pass
+      - POSTGRES_DB=notes
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    ports:
+      - "5432:5432"
+    networks:
+      benchmark_network:
+        ipv4_address: ${DB_IP}
+    deploy:
+      resources:
+        limits:
+          memory: 8G
+
+
+volumes:
+  pgdata:
+    driver: local
+    driver_opts:
+      type: 'bind'
+      o: 'bind'
+      device: '/home/greg/huge'
+
+
+networks:
+  benchmark_network:
+    ipam:
+      config:
+        - subnet: 172.20.0.0/16
+

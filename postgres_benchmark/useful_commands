@@ -1,0 +1,26 @@
+# create DB in the postgres instance
+createdb -h 172.20.0.10 -p 5432 -U app_user test_db
+
+# log into DB
+psql -h 172.20.0.10 -p 5432 -U app_user test_db
+
+# fill DB with data:
+# -s is a scaling factor, -s = 1 will put 100K rows in a pgbench_accounts table
+# -s = 10 will put 1M rows in a bgbench_accounts which will result in a size of 200M
+
+pgbench -h 172.20.0.10 -p 5432 -U app_user -i -s 10 test_db
+
+# run benchmark
+# -c - number of clients
+# -j - number of concurrent jobs (i.e. connections?)
+# -T - time of the benchmark
+pgbench -h 172.20.0.10 -p 5432 -U app_user -c 20 -j 10 -T 120 test_db
+
+# choose db when in psql
+\c test_db
+
+# list tables when in psql
+\dt
+
+# list sizes of DBs when in psql
+\l+
