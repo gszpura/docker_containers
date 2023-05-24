@@ -1,5 +1,5 @@
 ------------------------
-220MB of DB
+220MB of DB, 8GB of RAM
 ------------------------
 scaling factor: 10
 query mode: simple
@@ -11,7 +11,7 @@ latency average = 2.076 ms
 initial connection time = 75.076 ms
 tps = 9632.311418 (without initial connection time)
 ------------------------
-15GB of DB
+15GB of DB, 8GB of RAM
 ------------------------
 scaling factor: 1000
 query mode: simple

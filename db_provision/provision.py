@@ -1,24 +1,13 @@
-import os
-import enum
 import uuid
 import argparse
 import asyncio
-import itertools
 import asyncpg
-from pydantic import BaseSettings
 import random
 import string
 import datetime
-
-
-class Config(BaseSettings):
-    DATABASE_USER: str = "app_user"
-    DATABASE_PASSWORD: str = "app_password"
-    DATABASE_HOST: str = "172.20.0.10"
-    DATABASE_NAME: str = "sensor"
-    DATABASE_PORT: int = 5432
-    DATABASE_POOL_SIZE: int = 5
-    DATABASE_MAX_OVERFLOW: int = 50
+from config import settings
+from sql import DataType, DataTypeEnum, SQLParser, Table, JobTable, KeyTypeEnum, CommandTypeEnum
+from query_finder import QueryFinder
 
 
 class KeyRegister:
@@ -61,30 +50,16 @@ class PoolManager:
 
 
 # singletons
-
-settings = Config()
-POOL = PoolManager()
-KEY_REGISTER = KeyRegister()
-
-
-def get_sql_files(path):
-    files = []
-    for dirpath, dirnames, filenames in os.walk(path):
-        for filename in filenames:
-            if filename.endswith(".sql"):
-                files.append(os.path.join(dirpath, filename))
-    return files
-
-
-def get_queries(filename: str):
-    print(f"Checking {filename}")
-    with open(filename, 'r') as rd:
-        content = rd.read()
-        qs = [q for q in content.split("\n\n") if q]
-        return qs
+POOL = PoolManager()  # TODO: to be part of Generator class and Provision class
+KEY_REGISTER = KeyRegister()  # TODO: to be part of Generator class
 
 
 async def run_execute(queries: list[str]):
+    """
+    TODO: part of Pool/DB class
+    :param queries:
+    :return:
+    """
     pool = POOL.get_pool()
     resp_list = []
     async with pool.acquire() as conn:
@@ -103,6 +78,11 @@ async def run_execute(queries: list[str]):
 
 
 async def run_fetch(queries: list[str]):
+    """
+    TODO: part of Pool/DB class
+    :param queries:
+    :return:
+    """
     pool = POOL.get_pool()
     resp_list = []
     async with pool.acquire() as conn:
@@ -121,88 +101,85 @@ async def run_fetch(queries: list[str]):
     return resp_list
 
 
-async def provision(filename: str = None):
-    if not filename:
-        files = get_sql_files('.')
-    else:
-        files = [filename]
-    q = [get_queries(f) for f in files]
-    qs = list(itertools.chain(*q))
-    await run_execute(qs)
-
-
-class DataTypeEnum(enum.Enum):
-    INT = "int"
-    UUID = "uuid"
-    NUMERIC = "numeric"
-    VARCHAR = "varchar"
-    FOREIGN_KEY = "fkey"
-    TIMESTAMP = "timestamp"
-
-
-class DataType:
-
-    def __init__(self, name: str, type: DataTypeEnum, parameter: int | str):
-        self.type = type
-        self.name = name
-        self.parameter = parameter
-
-
-async def get_foreign_key_values(table_name):
-    query = f"SELECT id FROM {table_name} LIMIT 1000;"
-    keys = KEY_REGISTER.get_keys(table_name)
+async def get_foreign_key_values(field: DataType):
+    """
+    TODO: Move to generator class
+    :param field:
+    :return:
+    """
+    keys = KEY_REGISTER.get_keys(field.get_ref_table())
     if not keys:
-        results: list[list[asyncpg.Record]] = await run_fetch([query])
-        KEY_REGISTER.set_keys(table_name, [v['id'] for v in results[0]])
-        keys = KEY_REGISTER.get_keys(table_name)
+        results: list[list[asyncpg.Record]] = await run_fetch([field.get_select_for_foreign_key()])
+        KEY_REGISTER.set_keys(field.get_ref_table(), [v[field.get_ref_field()] for v in results[0]])
+        keys = KEY_REGISTER.get_keys(field.get_ref_table())
     return keys
 
 
-async def generate_single_row(schema: list[DataType]):
+async def generate_single_row(table: Table):
+    """
+    TODO: move to generator
+    :param table:
+    :return:
+    """
     values = []
-    for dt in schema:
-        type, param = dt.type, dt.parameter
-        if type == DataTypeEnum.INT:
-            values.append(random.randint(0, 1000))
-        if type == DataTypeEnum.UUID:
-            values.append(uuid.uuid4())
-        if type == DataTypeEnum.NUMERIC:
-            values.append(random.random() * 10)
-        if type == DataTypeEnum.VARCHAR:
-            values.append(''.join(random.choices(string.ascii_uppercase + string.digits, k=int(param))))
-        if type == DataTypeEnum.TIMESTAMP:
-            values.append(datetime.datetime.now())
-        if type == DataTypeEnum.FOREIGN_KEY:
-            keys = await get_foreign_key_values(param)
+    for field_name in table.fields:
+        field = table.fields[field_name]
+        dtype = field.type
+        value = None
+        if dtype == DataTypeEnum.INT:
+            value = random.randint(0, 10000)
+        if dtype == DataTypeEnum.SERIAL:
+            value = random.randint(0, 10000)
+        if dtype == DataTypeEnum.UUID:
+            value = uuid.uuid4()
+        if dtype == DataTypeEnum.NUMERIC:
+            value = random.random() * 10
+        if dtype == DataTypeEnum.VARCHAR:
+            value = ''.join(random.choices(string.ascii_uppercase + string.digits, k=int(10)))
+        if dtype == DataTypeEnum.TIMESTAMP:
+            value = datetime.datetime.now()
+
+        if field.key == KeyTypeEnum.FOREIGN_KEY:
+            keys = await get_foreign_key_values(field)
             total_len = len(keys)
-            values.append(keys[random.randint(0, total_len - 1)])
+            value = keys[random.randint(0, total_len - 1)]
+
+        values.append(value)
     return values
 
 
-async def generate_data_from_types(schema: list[DataType], size=10):
+async def generate_data_from_types(table: Table, size=10):
+    """
+    TODO: part of Generator class
+    :param table:
+    :param size:
+    :return:
+    """
     values = []
     for i in range(size):
-        data = await generate_single_row(schema)
+        data = await generate_single_row(table)
         values.append(data)
     return values
 
 
-async def create_insert_queries(table_name: str, schema: list[DataType], values: list) -> str:
+async def create_insert_queries(table: Table, values: list) -> str:
     """
-    TODO: make it readable for normal human beings
+    TODO: make it readable for normal human beings, part of Generator class
     :param table_name:
     :param schema:
     :param values:
     :return:
     """
-    parts = [f"INSERT INTO {table_name}("]
-    for column in schema:
-        parts.append(f'{column.name}, ')
+    parts = [f"INSERT INTO {table.name}("]
+    field_list = []
+    for col_name in table.fields:
+        field_list.append(table.fields[col_name])
+        parts.append(f'{col_name}, ')
     parts[-1] = parts[-1].strip(", ")
     parts.append(") VALUES (")
     for item in values:
         for i, column_val in enumerate(item):
-            col_type = schema[i].type
+            col_type = field_list[i].type
             if col_type == DataTypeEnum.INT:
                 parts.append(f"{column_val}, ")
             else:
@@ -214,47 +191,29 @@ async def create_insert_queries(table_name: str, schema: list[DataType], values:
     return "".join(parts)
 
 
-def get_table_schema(name):
-    """
-    TODO: create it form .sql files,
-    update parameters
-    :param name:
-    :return:
-    """
-    if name == "location":
-        return [
-            DataType("id", DataTypeEnum.INT, "not important"),
-            DataType("created_at", DataTypeEnum.TIMESTAMP, "not important"),
-            DataType("address", DataTypeEnum.VARCHAR, 10)
-        ]
-    elif name == "sensor":
-        return [
-            DataType("id", DataTypeEnum.UUID, "not important"),
-            DataType("location_id", DataTypeEnum.FOREIGN_KEY, "location"),
-            DataType("type", DataTypeEnum.VARCHAR, 10)
-        ]
-    elif name == "measurement":
-        return [
-            DataType("id", DataTypeEnum.UUID, "not important"),
-            DataType("created_at", DataTypeEnum.TIMESTAMP, "not important"),
-            DataType("sensor_id", DataTypeEnum.FOREIGN_KEY, "sensor"),
-            DataType("value", DataTypeEnum.NUMERIC, "not important")
-        ]
-    else:
-        return []
-
-
-async def insert_generate(order: list[str]):
+async def insert_generate(filename: str | None):
     """
     TODO: order should be figured out by topological sort
-    :param order:
     :return:
     """
-    for entity in order:
-        print("Inserting for:", entity)
-        data = await generate_data_from_types(get_table_schema(entity))
-        query = await create_insert_queries(entity, get_table_schema(entity), data)
+    qs = await QueryFinder(filename).get_queries()
+    parser = SQLParser()
+    for command in qs:
+        job_table: JobTable = parser.parse(command)
+        if job_table.job != CommandTypeEnum.CREATE:
+            continue
+
+        print("Inserting for:", job_table.table.name)
+        data = await generate_data_from_types(job_table.table, 3)
+        query = await create_insert_queries(job_table.table, data)
         await run_execute([query])
+
+
+async def provision(filename: str = None):
+    print(filename)
+    qf = QueryFinder(filename)
+    qs = await qf.get_queries()
+    await run_execute(qs)
 
 
 async def main():
@@ -269,12 +228,9 @@ async def main():
     args = parser.parse_args()
     await POOL.init()
     if args.insert:
-        await insert_generate(["location", "sensor", "measurement"])
+        await insert_generate(args.file)
     else:
-        if args.file:
-            await provision(args.file)
-        else:
-            await provision()
+        await provision(args.file)
 
 
 if __name__ == "__main__":
